@@ -4,7 +4,6 @@ import json
 import re
 from datetime import datetime, date, time
 import os
-
 import psycopg2  
 
 LIST_URL = "http://www.allmeartspace.com/b/exhibitions/?state=current"

@@ -5,21 +5,11 @@ import re
 from datetime import datetime, date, time
 import os
 
-import psycopg2  # PostgreSQL 연동용
+import psycopg2  
 
-
-# ==============================
-# 기본 설정
-# ==============================
-
-# 올미아트스페이스 현재 전시 URL
 LIST_URL = "http://www.allmeartspace.com/b/exhibitions/?state=current"
 
-
-# ==============================
-# 날짜/시간 파싱 유틸 함수들
-# ==============================
-
+# 날짜/시간 파싱 유틸 함수
 def parse_single_date(part, base_date=None):
     """
     part: '2025. 11. 26', '2025.12.3', '12.8', '8', '2025-08-25' 같은 문자열
@@ -30,7 +20,7 @@ def parse_single_date(part, base_date=None):
 
     s = part.strip()
 
-    # 0) YYYY-MM-DD 형식 우선 처리
+    # YYYY-MM-DD 형식 
     m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", s)
     if m:
         y, mth, d = map(int, m.groups())
@@ -42,7 +32,6 @@ def parse_single_date(part, base_date=None):
     # "2025. 11. 26" -> "2025.11.26"
     s = re.sub(r"\s*\.\s*", ".", s)
 
-    # 1) YYYY.MM.DD
     m = re.match(r"^(\d{4})\.(\d{1,2})\.(\d{1,2})$", s)
     if m:
         y, mth, d = map(int, m.groups())
@@ -51,7 +40,7 @@ def parse_single_date(part, base_date=None):
         except ValueError:
             return None
 
-    # 2) MM.DD (연도는 base_date 기준)
+    # MM.DD (연도는 base_date 기준)
     if base_date:
         m = re.match(r"^(\d{1,2})\.(\d{1,2})$", s)
         if m:
@@ -61,7 +50,7 @@ def parse_single_date(part, base_date=None):
             except ValueError:
                 return None
 
-    # 3) DD (연/월은 base_date 기준)
+    # DD (연/월은 base_date 기준)
     if base_date:
         m = re.match(r"^(\d{1,2})$", s)
         if m:
@@ -90,7 +79,7 @@ def parse_operating_day(operating_day: str):
 
     text = operating_day.strip()
 
-    # 0) 문자열 안에서 YYYY-MM-DD 패턴 2개 뽑기 (요일 괄호 포함 대응)
+    # 문자열 안에서 YYYY-MM-DD 패턴 2개 뽑기
     found = re.findall(r"\d{4}-\d{2}-\d{2}", text)
     if len(found) >= 2:
         try:
@@ -100,7 +89,7 @@ def parse_operating_day(operating_day: str):
         except ValueError:
             pass
 
-    # 1) YYYY-MM-DD - YYYY-MM-DD 형식
+    # YYYY-MM-DD - YYYY-MM-DD 형식
     m = re.match(r"^(\d{4}-\d{2}-\d{2})\s*[-~–]\s*(\d{4}-\d{2}-\d{2})$", text)
     if m:
         s1, s2 = m.groups()
@@ -111,7 +100,7 @@ def parse_operating_day(operating_day: str):
         except ValueError:
             pass
 
-    # 2) 그 외: ~, -, – 기준으로 나누기
+    # 그 외: ~, -, – 기준으로 나누기
     parts = re.split(r"\s*[-~–]\s*", text, maxsplit=1)
     if len(parts) != 2:
         return text, ""
@@ -178,24 +167,20 @@ def normalize_text(s: str) -> str:
         return ""
     return s.strip()
 
-
-# ==============================
-# 크롤러 본체 (올미아트스페이스)
-# ==============================
-
+# 크롤러
 def crawl_exhibitions():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
-        # 1) 현재 전시 리스트 페이지 접속
+        # 현재 전시 리스트 페이지 접속
         page.goto(LIST_URL, timeout=60_000)
         page.wait_for_timeout(3000)
 
         exhibitions = []
         detail_urls = []
 
-        # 전시 아이템: <div class="cbp-item ...">
+        # 전시 아이템 <div class="cbp-item ...">
         items = page.locator("div.cbp-item")
         count = items.count()
         print(f"[리스트] 전시 개수(올미): {count}")
@@ -236,7 +221,7 @@ def crawl_exhibitions():
 
             start_date, end_date = parse_operating_day(operating_day)
 
-            # (4) 주소 / 갤러리명 (기본값)
+            # (4) 주소 / 갤러리명
             hall = "서울 종로구 우정국로 51 올미아트스페이스"
             gallery_txt = "올미아트스페이스"
 
@@ -245,7 +230,7 @@ def crawl_exhibitions():
             open_time, close_time = parse_operating_hour(operating_hour)
 
             # (6) 리스트 썸네일 이미지: .cbp-caption-defaultWrap img
-            #     → src에 '/data/file' 포함된 것만 사용
+            # src에 '/data/file' 포함된 것만 사용
             thumb_urls = []
             thumb_img = item.locator(".cbp-caption-defaultWrap img")
             if thumb_img.count():
@@ -264,9 +249,9 @@ def crawl_exhibitions():
                     "gallery_name": gallery_txt,
                     "open_time": "10:30",
                     "close_time": "18:00",
-                    "author": "",              # 작가 이름 (상세에서 채움)
+                    "author": "",              
                     "description": "",
-                    "img_url": thumb_urls,     # 리스트 썸네일 우선
+                    "img_url": thumb_urls,     
                 }
             )
             detail_urls.append(detail_url)
@@ -280,7 +265,7 @@ def crawl_exhibitions():
             page.goto(url, timeout=60_000)
             page.wait_for_timeout(3000)
 
-            # (0) 상세 상단 정보에서 '장소' 있으면 address 덮어쓰기 (있으면)
+            # 상세 상단 정보에서 '장소' 있으면 address 덮어쓰기
             hall_detail = None
             info_items = page.locator("ul li")
             info_count = info_items.count()
@@ -302,7 +287,7 @@ def crawl_exhibitions():
             if hall_detail:
                 ex["address"] = hall_detail
 
-            # (1) 작가 정보 (있으면)
+            # 작가 정보 (있으면)
             artist = ""
             rows = page.locator("tr")
             row_count = rows.count()
@@ -318,7 +303,7 @@ def crawl_exhibitions():
                     artist = "".join(cells.nth(1).inner_text().split())
                     break
 
-            # (2) 설명 텍스트 컨테이너 찾기 (여러 후보)
+            # 설명 텍스트 컨테이너 찾기
             content = None
             content_selectors = [
                 "div.exhibition_view",
@@ -347,7 +332,7 @@ def crawl_exhibitions():
             lines = [p.strip() for p in paragraphs if p.strip()]
             description = "\n".join(lines).strip()
 
-            # (3) 이미지 URL: '/data/file' 이 들어간 것만
+            # 이미지 URL: '/data/file' 이 들어간 것만
             image_urls = list(ex.get("img_url", []))  # 썸네일 그대로 시작
 
             img_els = page.locator("img")
@@ -382,11 +367,7 @@ def crawl_exhibitions():
         print(f"\n[최종] 올미 전시 {len(exhibitions)}개 상세 정보 수집 완료")
         return exhibitions
 
-
-# ==============================
 # DB 저장 함수
-# ==============================
-
 def save_to_postgres(exhibitions):
     """
     exhibition 테이블 구조(인사아트/프리마와 동일 가정):
@@ -440,7 +421,7 @@ def save_to_postgres(exhibitions):
                 print(f"[DB] end_date 없음, 스킵: {ex.get('title')}")
                 continue
 
-            # ✅ description이 한 글자도 없으면 스킵
+            # description이 한 글자도 없으면 스킵
             desc = normalize_text(ex.get("description") or "")
             if not desc:
                 skipped_no_description += 1
@@ -482,15 +463,11 @@ def save_to_postgres(exhibitions):
         if conn:
             conn.close()
 
-
-# ==============================
 # 메인 실행부
-# ==============================
-
 if __name__ == "__main__":
     data = crawl_exhibitions()
 
-    # 1) JSON 파일로 저장
+    # JSON 파일로 저장
     output_path = "allmeArt.json"
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -499,5 +476,5 @@ if __name__ == "__main__":
     print(f"전시 개수: {len(data)}")
     print("=========json저장 완료=========")
 
-    # 2) DB에 저장
+    # DB에 저장
     save_to_postgres(data)
